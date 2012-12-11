@@ -1,0 +1,430 @@
+Title: De-indirection for Flash-Based SSDs with Nameless Writes
+Authors (CS Department, University of Wisconsin-Madison):
+  * Yiying Zhang
+  * Leo Prasath Arulraj
+  * Andrea C. Arpaci-Dusseau
+  * Remzi H. Arpaci-Dusseau
+
+---- Abstract ----------------------------------------------------------------
+Presentation of Nameless Writes
+  * New device interface removing the need for indirection in SSDs
+  * Allow the device to choose the location of a write
+  * It then communicates the name (address) of the block to the client
+  => The device controls allocation decisions
+     It can execute critical tasks (garbage collection, wear leveling)
+  => No need for large and costly indirection tables
+
+Port of Linux ext3 to use an emulated nameless-writing device.
+  => Reduces space and time overhead
+  => More simplicity, reduced cost, increase performances of SSD-based storage
+
+---- 1. Introduction ---------------------------------------------------------
+Indirection is used a lot (FSs, MMUs...)
+  => Improves performance, reliability and capacity
+Example: Remap faulty physical block transparently in HDDs
+
+Indirection particularly important in SSDs
+  * Flash Translation Layer (FTL) (map virtual to physical address space)
+  * Two main reasons:
+      - Transform erase/program cycle into more typical write-based interface
+          Need to erase (set a whole block to 1s) before writing (only 1 -> 0)
+          Copy-on-write technique required (so need for FTL)
+      - Implementation of wear leveling (critical for SSD lifetime)
+          Blocks can only survive 100,000 erase/program cycles...
+          Spread the write load accross flash blocks evenly
+
+Indirection found in FTLs comes with performance and space overheads
+If each virtual page can be mapped in the address space:
+  * With 32-bit pointer per page of 2KB
+  * 2GB table space needed for 1TB SSD
+  => Too much space used for the table (SRAM is expensive)
+
+If only blocks can be mapped (block = 64 or 128 pages):
+  => Reduces the overhead (32MB table space needed for 1TB SSD)
+     Seems more reasonable, but high performance costs
+     Block-level maping => excessive garbage collection (Gupta et al. [16])
+
+Many SSDs use an hybrid approach:
+  * Map most data at block level
+  * Keep a small page-mapped area for updates
+  => Keeps space overhead low, and avoids garbage collection overhead
+     But it requires more device complexity
+  => But garbage collection can still be costly and reduce the performances
+
+FTL indirection => significant cost
+Since SSDs scale, even hybrid schemes will become infeasible
+
+Solution introduced in the paper: Nameless Writes
+  * Reduces most of the costs of indirection (but keeps its benefits)
+  * An extra layer of indirection is removed
+  * In write operation, no address specified
+  * The device is free to choose any physical block to write the data
+  * When a location is decided, the client is informed of the choice
+
+Potential problem: recursive update problem
+  * If all writes are nameless, any update to the FS requires a recursive set
+    of update up the file-system tree.
+  * Solution: segmented address space
+      - Large physical address space for nameless writes
+      - Small virtual address space for traditional named writes
+      => Keep pointer-based structures in the virtual space break recursion
+
+Advantage: largely remove the need for indirection
+  => Simplification of internal structure, improvement of performances, cost
+
+Does not give away SSD manufacturer's responsibility: wear leveling
+  * Device has control of block placement
+  * It can thus properly implement wear leveling => ensure lifetime
+
+Benefits of nameless writes demonstrated by port to the Linux ext3 FS
+  * Comparision with different FTLs
+  * New interface reduces space cost of indirection
+  * And improve random-write performance
+
+Outline:
+  * Section 2: Costs and benefits of indirection
+  * Section 3: Nameless Write interface
+  * Section 4: How to build a nemaless-writing device
+  * Section 5: How to port ext3 to use nameless-writing interface
+  * Section 6: Evaluation with an emulated nameless-writing device
+  * Section 7: Related works
+  * Section 8: Conclusion
+
+---- 2. Indirection ----------------------------------------------------------
+Indirection is a fundamental technique in computer systems
+Excess indirection: a system using multiple levels of indirection
+General solution: de-indirection (removes an extra layer of indirection)
+  => improves performance or reduce space overhead
+
+---- 2. 1. Excess Indirection
+Exists in many widely used systems:
+  * Memory management of OSs on top of hypervisors
+      - OS maps virtual-to-physical mapping for each process
+      - Hypervisor manages physical-to-machine mapping for each OS
+      => OS unchanged, unaware that it does not manage real physical memory
+         Hypervisor has full control over the hardware
+      => Space and time overheads (maintain OS@ to Machine@ mapping)
+  * Map bad sectors to other locations in HDDs
+      - Improves reliability in case of write failures
+  * FS runing on RAID storage arrays
+      - Indirection tables required for flexible control over on-disc location
+      - FS maps logical offsets to logical block addresses
+      - RAID maps logical block addresses physical (disk, offset) pairs
+  * Focus of this work: flash-based SSDs
+      - Extra level of indirection provided via the FTL
+      - FTL required to:
+          Transform writes issued by the client into erase/program cycles
+            => Amortize cost of erase by copy-on-write
+          Implementation of wear leveling (increase lifetime)
+
+---- 2. 2. De-indirection
+System with two levels of mapping (= excess indirection)
+  * First indirection F: A --> C, i |-> F(i)
+  * Second indirection G: C --> B, j |-> F(j)
+  * To lookup item i: G(F(i))
+De-indirection: remove the second level of indirection
+  * Evaluate the second mapping for all valuse mapped by F
+  * F': A --> C, i |-> G(F(i))
+
+Successpuly applied with hypervirsors
+  * See "The Turtles Project" (nested hyperfisors)
+      => Collapses multiple page tables => single extra level of indirection
+      => Better performances (reduce space and time overhead
+
+---- 2. 1. Summary
+Reasons for indirection:
+  * Make OS that they own physical memory in hypervisors
+  * Improves performances, reliability (HDDs, SSDs)
+  * Modularity and code simplicity
+
+Often: need for a fiwed interface between diffent layers of a system
+  * Example: para-virtualized systems
+      => Relieves the hypervisor from managing the extra level of indirection
+
+---- 3. Nameless Writes ------------------------------------------------------
+New device interface
+  * Removes many infrastructures for indirection is SSDs
+  * Device supporting Namelsss Writes: Nameless-writing Device
+
+Key feature of such device: nameless writes
+But for convinience for the client (FS), other features are provided:
+  * Support for segmented address space
+  * Migration callbacks
+  * Associated metadata
+
+---- 3. 1. Nameless Write Interfaces
+Nameless_Write(data, len, metadata) : status, phys_addr
+Namelsee_Overwrite(phys_addr, data, len, metadata) : status, new_phys_addr
+Physical_Read(phys_addr, len, metadata) : status, data
+Free(v/phys_addr, len, metadata, flag) : status
+
+Diffence between write operation and nameless write operation:
+  * Nameless write does not specify a target location
+  * Nameless write returns the physical address after the data is written
+     => The client need to keep the name (address) in its own structure
+
+Nameless overwrites interface similar to nameless write
+  * But need to pass the old physical addres as a parameter
+  * The device frees the old address
+  * The data is written somewhere and the new physical address is returned
+
+Read operations are unchanged (only a metadata parameter is added)
+
+Nameless write = allocating operation
+  => Need for de-allocation as well (free or trim)
+
+Example of use with a FS (Linux ext3)
+  * We consider the operation "append a new block to an existing file"
+  * First the FS issues a nameless write of the new data block
+  * When the data is written, the FS receives the physical address
+  * The FS can update the corresponding (in-memory) inode
+  * Eventually the update will be flushed to disk
+  * Any structure referencing the inode must be updated as well
+  * And so on until the root structure of the FS is reached
+
+To avoid this update chain, segmented address space is used
+
+---- 3. 2. Segmented Address Space
+Virtual_Read(v_addr, len) : status, data
+Virtual_Write(v_addr, data, len) : status
+
+Solution to the recursive update problem: segmented address space (2 segments)
+  * The virtual address space (uses virtual read, write)
+  * The physical address space (uses physical read, nameless writen overwrite,
+    and free)
+
+Small indirection table kept by the device to map the virtual@ to physical@
+Reads and writes to virtual space are identical to regular reads and writes
+Writes to physical space are forbidden (a client cannot choose the clocation
+of a write)
+
+Flag used to indicate if segment belongs the virtual memory or not
+The size of the segments is not fixed
+Allocaton on either segment can be performed if there is still some space
+  => A device space usage counter is maintained
+
+Basic idea:
+  * Store inodes and other metadata in virtual space
+      => This breaks the recursion
+         Updates can be performed without propagating throughout the directory
+         hierarchy
+
+---- 3. 3. Migration Callback
+Migration [Callback] (old_phys_addr, new_phys_addr, metadata)
+
+To allow wear leveling the SSD need to be able migrate data
+  * The device moves the physical blocs and update the virtual-to-physical map
+  * Blocks in the physical segment cannot be moved without noticing the client
+      => Migration callback
+         When the FS is noticed, it can update the metadata acordingly
+
+---- 3. 4. Associated Metadata
+Blocks are associated some metadata
+  * Aim: locate structures that point to a particular block
+  * "metadata" parameter passed to the nameless write operation
+  * Metadata persistently recorded in the block header
+
+Example, Linux ext3
+  * The metadata structure pointing to the data block can be identified by:
+      - The inode number,
+      - The inode generation number
+      - And the offset of the inode in the block
+
+Some file systems already record explicitly back references (NoFS, brtfs)
+  => Can reuse these instead
+
+What is it useful for?
+  * Help finding metadata that need to be updated after a migration process
+  * Recover from various crash scenarios
+  * NO information about the physical location contained in the metadata
+      => Only used for crash recovery and migration
+
+---- 3. 5. Implementation Issues
+Only issues that differ from standard SSDs are covered
+
+How big should the virtual segment be?
+  * It depends on the usage that the client make of it...
+  * Small virtual segment is usually enough (see Section 6)
+
+The virtual space requires an indirection table, but it is quite small
+  * Likely to include simple page-level mapping
+  * If the virtual address space is larger than the table: swap
+      => Slow down access to the virtual segment
+  => Client need to be careful and avoid using too much virtual segment
+     Ideal situation: use no more than the table (=> No need to swap)
+
+Other issue: manufacturers might not want to expose physical names to client
+  => Might reveal to much of their industrial secrets
+Possible solution: do address translation on the fly
+  => Possible performance and space overhead
+     But this is the cost of hiding informations to the client...
+
+---- 4. Nameless-Writing Device ----------------------------------------------
+Description of an emulated nameless-writing SSD
+Nameless Writes => Simpler FTL (free to do its own allocation / wear leveling)
+A new garbage collection method is also proposed (with no FS interaction)
+
+---- 4. 1. Nameless-Writing Interface Support
+Data allocation performed in a log-structured fashion
+  * Maintain active blocks that are written in sequential order
+  * Next free physical address allocated upon nameless write
+
+Sipport for virtual block space
+  * Maintain a mapping table in the device cache
+  * When the cache is full, swap out the mapping table
+  * Such swapping rarely happen in practice
+      => Small mapping table for typical FSs
+
+Trims (free) handled in a similar manner to traditional SSDs
+  * Invalidate the physical address sent by a trim command (in overwrite too)
+  * During garbage collection: recycle invalidated pages
+
+Associated metadata of a data page stored in its OOB area (Out-Of-Band)
+  => Usually used for error-correcting code
+     Moved together with data when a migration is performed
+
+---- 4. 2. In-place Garbage Collection
+-- TODO
+
+---- 5. Nameless Writes on ext3 ----------------------------------------------
+-- TODO
+
+---- 5. 1. Segmented Address Space
+-- TODO
+
+---- 5. 2. Associated Metadata
+-- TODO
+
+---- 5. 3. Write
+-- TODO
+
+---- 5. 4. Read
+-- TODO
+
+---- 5. 5. Free
+-- TODO
+
+---- 5. 6. Wear Leveling with Callbacks
+-- TODO
+
+---- 5. 7. Reliability Discussion
+-- TODO
+
+---- 6. Evaluation -----------------------------------------------------------
+Evaluation of an emulated nameless-writing device
+Focus on the questions:
+  * Memory space costs compared to other FTLs?
+  * What is the overall performance benefit?
+  * What is the write performance? Differences with other FTLs
+  * Costs of in-place garbage collection? Overheads of wear leveling callback?
+  * Correctness of crash recovery, overhead?
+
+SSD Emulator as a pseudo block device
+  * Emulated garbage collection and wear leveling
+  * Different FTLs implemented:
+      - Page-level mapping (unrealistic -> serves as upper-bound on perf)
+      - Hybrid mapping
+      - Nameless-writing
+  -- TODO garbage collection?
+  * Implemented alo the nameless-writing ext3 FS
+
+---- 6. 1. SSD Memory Consumption
+Evaluation of the space cost.
+Results in table 3
+  * Page-level mapping: Highest space cost (not surprising... 1GB for 1TB SSD)
+  * Hybrib mapping: Better, but still high (118MB for 1TB SSD)
+  * Nameless-writing: Real good, even for 1TB SSD, less than 3MB
+
+---- 6. 2. Application Performance
+Use of 3 benchmarks from the filebench suite [29]
+  * Varmail
+  * File-server
+  * Web-server
+
+Results in Figure 2.
+  * Page-level mapping and nameless write perform better than hybrid mapping
+    on varmail and file-server.
+      => Reason: these benchmark contain many random writes (90.8% and 70.6%)
+         Explanation: see 5.4
+  * All perform equaly good with the webserver benchmark
+  => Nameless-writing achieve excellent performances
+     Almost as good as page-level mapping (which serves as an upper-bound)
+     Small overhead explained in 5.5 and 5.6
+
+---- 6. 3. Basic Write Performance
+Write performance much worse than read performance in SSDs.
+The bottleneck is random write performance.
+Results of the evaluation of sequential write / random write performances in
+Figure 3
+  * Random write throughput is close to the sequential write throughput for
+    page-level mapping and nameless-writing FTLs
+      => Overhead comes from garbage collection process
+         (Lowest cost in sequential order since whole blocks can be erased)
+  * Random write throughput of hybrid mapping FTL is very bad
+      => Explained by costly full-merge operation and corresponding garbage
+         collection process
+         (Required each time a log block is filled with random writes)
+  * The bigger the log block area is, the highest throughput you get with the
+    hybrid mapping FTL.
+
+Nameless write achieves very good throughput without requiring additional
+over-provisioning of RAM space.
+It has also a low overhead compered to page-level mapping.
+
+---- 6. 4. A Closer Look at Random Writes
+Major performance bottleneck of SSDs: random writes
+Do nameless-writing device perform well with any random-write workload?
+Why do they outperform hybrid devices?
+-- TODO **** Figures 4 and 5
+
+---- 6. 5. In-place Garbage Collection Overhead
+-- TODO
+
+---- 6. 6. Wear-leveling Callback Overhead
+-- TODO
+
+---- 6. 7. Reliability
+-- TODO
+
+---- 7. Related Work ---------------------------------------------------------
+Large number of FTLs and FS have been proposed in the recent years
+Among the most related ones:
+
+Range Writes:
+  * Similar approach to improve HDD performance
+  * Let the FS specify a range of addresses
+  * The device picks the final physical address
+  * Nameless write do not receive any address allong with the data
+      => Allocation responsibility moved to the device
+  * Similar problem with updating metadata (recursive update)
+      => Segmented address space
+  * Nameless Writes target device that need control over data placement
+  * Range Writes target traditional HDD (no need for wear leveling)
+  * Data placement in SSD is less restricted: uniform access latency
+      => No read head to move...
+
+Poor random-write performance of hybrid FTLs motivated Demand-based FTL (DFTL)
+  * Maintains a page-level mapping table
+  * And writes data in a log-structured fashion
+  * Stores its page-level mapping table on the device
+  * Keeps a small portion of the mapping table in the device cache
+  * Workloads with working set > device cache
+      => Swapping the cached mapping is costly
+  * There is the page table storage overhead
+  * Problem solved by Nameless Writes
+      - Need only indirection for the virtual space (small)
+      - This fits in the device cache with typical FS image
+      - No performance or swapping overhead
+
+---- 8. Conclusion and Future Work -------------------------------------------
+Nameless Writes introduced: new write interface built to reduce the costs of
+indirection
+Practicality demonstrated by the port of the Linux ext3 FS
+Great advantages shown through extensive evaluations
+  => Greatly reduced space costs
+  => Random-write performance improved
+
+Future work: porting other types of file systems
+  * Linux ext2
+  * Copy-On-Write File Systems and Snapshots
+  * Extent-Based File Systems

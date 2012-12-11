@@ -1,0 +1,21 @@
+Paper to present
+  De-indirection for Flash-Based SSDs with Nameless Writes
+Authors (CS Department, University of Wisconsin-Madison):
+  Yiying Zhang, Leo Prasath Arulraj, Andrea C. Arpaci-Dusseau, Remzi H. Arpaci-Dusseau
+
+Day of the presentation: 19/12/2012
+
+Work to do:
+  * Summary of the research article (1-2 pages)
+      - Sent one day before the presentation
+  * Presentation (using slides):
+      - Describe the main ideas and experiments in the article
+      - Provide a critique of the research article (in the conclusion)
+         -> state our opinion about the article's main strengths / weaknesses
+      - Between 25 and 30 minutes
+      - Followed by a class discussion
+
+Graded on:
+  - Mainly presentation and understanding of our paper
+  - Participation in the discussions about other articles
+
