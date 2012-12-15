@@ -7,9 +7,14 @@
 \sectionfont{\large}
 \usepackage[left=2cm, right=2cm, top=2cm, bottom=2cm]{geometry}
 
+\usepackage{listings}
 \usepackage{latexsym}
 \usepackage{proof}
 \usepackage{amssymb}
+
+\lstset{
+  basicstyle=\tiny
+}
 
 %% New commands
 \newcommand{\eqdef}{\;\stackrel{\text{def}}{=}\;}
@@ -24,11 +29,54 @@
 \maketitle
 
 \begin{abstract}
-% TODO
+This article summarizes the description and evaluation of a new device
+interface that reduce, if not remove, the need for indirection in flash-based
+SSD storage: It has been presented by Yiyang Zhang et al. a paper called
+\textit{De-Indirection for Flash-Based SSDs with Nameless Writes"}.
+
+Their idea is to let the device choose the most suitable block in which to
+write the data. The address of the write is then provided to the client (file
+system). By doing so, the device is able to execute critical tasks such as
+garbage collection and wear leveling without relying on the file system.
+
+We quickly present SSDs and the notion and indirection. We then introduce
+the Nameless Writes interface and some of the evaluations done by the authors
+of the original paper on an emulated nameless-writing device.
+
+This summary is in no way intended to cover the summarized paper in full.
+Readers interested in the details must refer to the original paper.
 \end{abstract}
 
 \section*{Introduction}
-% TODO
+Indirection is used in many computer systems. It is used mainly to improve
+their performance and reliability. For example current hard drives make use of
+a mapping table that remaps faulty sectors to other locations transparently
+(from the file system's point of view).
+
+Solid State Drives (SSDs) also use indirection in order to satisfy the
+specific requirements of their hardware (wear leveling, erase / program
+cycle, garbage collection). In particular, when a file is modified on an SSD,
+its original location cannot be updated. The hardware uses copy on write and
+must make use of indirection to make the filesystem believe that the updated
+data still resides at the same (virtual) address. The problem is that storing
+a table to map physical to virtual addresses wastes a lot of expensive flash
+memory.
+
+In this article, we summarize a paper called \textit{De-Indirection for
+	Flash-Based SSDs with Nameless Writes}, in which Yiyang Zhang et al.
+propose a way to modify to current SSDs and file systems to remove the need
+for indirection. Their idea is to let the SSD choose the name (address) of the
+data to be written and only after inform the file system for it to register
+the location in its internal data structures.
+
+Content of the report. In the first section we introduce SSDs and their
+particular functionning mode. We then present the techniques of indirection
+that are currently used in SSDs to ensure wear-leveling in the second section.
+In the third section, Nameless Writes are introduced together with their
+device interface. The problem of recursive writes is also addressed.
+Finally, we present some evaluation in the fourth section and show that
+nameless writes could be a viable solution to solve the indirection issues
+in SSDs.
 
 \section*{SSD principles}
 % TODO
@@ -37,17 +85,100 @@
 % Wear leveling
 
 \section*{Indirection in SSDs}
-% TODO
-% Full page mapping
-% Block mapping
-% Hybrid mapping
-% Nameless Writes => De-indirection
+As discussed in the previous section, indirection plays a crucial role in
+SSDs to increase their lifetime. Indirection is implemented in the Flash
+Translation Layer (FTL), which maps the virtual to the physical address space. 
+
+The main problem with the indirection found in FTLs is that it comes with
+performance and space overheads.
+
+To better understand the problem, let's consider that we have a 1TB SSD split
+up into 2KB pages. A full page mapping (with one 32-bit pointer per page)
+would require a 2GB space, which would be unacceptable considering the cost
+of SRAM.
+
+An other idea is to map blocks of, say 128 pages. The space cost of the
+mapping would be reduced to 32MB which seems more reasonable. However, it has
+been shown that with such coarse grain mapping, there is a huge performance
+overhead introduced by garbage collection (Gupta et al.).
+
+A majority of the SSDs that are available to buy use both of these schemes.
+Most of the data is mapped at block level, but there is a small area that is
+mapped at the page level for more efficient updates. This technique keeps
+the space overhead reasonably low while avoiding the high garbage collection
+cost of the full block-level mapping. The main problem with this technique is
+that the FTL is made very complex, and there is still a performance overhead
+(and it is also harder to maintain). Moreover, garbage collection can still be
+costly and induce a performance problem.
+
+In all of these designs, the indirection in the FTL implies some cost that
+might not be very significant now, but that will become a problem when the
+SSDs scale. The hybrid schemes will eventually become infeasible.
+
+To solve these problems, the authors of the paper introduce Nameless Writes.
 
 \section*{Nameless Writes}
-% TODO
-% Principle
-% Device interface
-% Segmented address space
+The aim of the new technique presented here is to reduce most of the costs of
+indirection while keeping its benefits. The idea is not to provide any address
+for a write operation. The device can itself choose where to put the data
+among all physical pages. The file system is then notified and can record the
+data in its data-structures.
+
+Here is the main interface of a nameless writing device:
+\begin{lstlisting}
+Nameless_Write(data, len, meta): status, phys@
+Nameless_Overwrite(phys@, data, len, meta): status, new@
+Physical_Read(phys@, len, meta): status, data
+Free(virt/phys@, len, meta, flag): status
+\end{lstlisting}
+Note that the nameless overwrite has the same mechanism. The original address
+is given as a parameter, and the new address is returned once the device has
+made its choice. Also, since a nameless write is an allocating operation,
+there is a corresponding free operation. In case of a nameless overwrite, the
+free is handled by the device. Note that for the read operation the physical
+address is to be provided.
+
+There is but one problem with this Nameless Write interface: the recursive
+update problem. If the only available write operation is nameless write, any
+update to the file system will require a recursive set of updates up the file
+system tree. For exemple, appending a block at the end of a file will require
+the inode of the file to be modified using a nameless overwrite which will
+change its location. So any structure referencing the inode will have to be
+modified, propagating potentially the update up to the file system root.
+
+To solve this problem, the authors of the paper propose to provide a segmented
+address space: a large physical address space for nameless writes, and a small
+virtual address space mapped to the physical address space. Keeping the
+pointer-based structures in the virtual space will break the recursion in case
+of reccursive update.
+
+The operations provided for virtual read and write are usual:
+\begin{lstlisting}
+Virtual_Read(virt@, len): status, data
+Virtual_Write(virt@, data, len): status
+\end{lstlisting}
+
+Only a very small indirection table is kept by the device to map the virtual
+addresses to physical addresses, and it will usually fit in the device cache.
+The size of the segement is not fixed, so that it can be addapted to the file
+system in use.
+
+Note that physical writes are not allowed, only the device has the power to
+choose the location of a write. Also, to distinguish a block that is mapped by
+a virtual block, a flag is set in its metadata which are included in the block
+headers.
+
+The device also needs to be able to move data from one place to another in
+order to allow wear leveling. The interface defines a callback function that
+can notify the file system of data migration.
+\begin{lstlisting}
+Migration [Callback] (old_phys@, new@, meta)
+\end{lstlisting}
+
+Blocks in the virtual address space can be moved without having to notice the
+file system, but for the blocks that are in the physical space, the migration
+callback have to be used for the file system to update its data structures
+accordingly.
 
 \section*{Evaluation}
 % TODO
@@ -57,9 +188,19 @@
 % Write performance
 
 \section*{Conclusion}
-% TODO
+Nameless Writes have been introduced to reduce the cost of indirection in
+SSDs. This new interface still ensures wear-leveling and has been tested using
+and emulated device for which Yiyang Zhang ported the Linux ext3 file system.
 
-% \bibliographystyle{aiaa}
-% \bibliography{refs}
+Nameless-writing devices have great advantages, as have been shows with the
+results of the evaluation. In particular, the space cost of the system is
+greatly reduced even compared to hybrid mapping FTLs, and random-write
+performance are improved. The design of the FTL is also made much simpler.
+
+Even though the authors only ported the Linux ext3 file system to work with
+their emulated nameless-writing device, they argue that it would be possible
+(and will be future work) to do the same with other file systems (ext2,
+copy-on-write file systems, extent-based file systems).
+
 \end{document}
 
