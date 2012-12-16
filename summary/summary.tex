@@ -28,24 +28,24 @@
 \date{\today}
 \maketitle
 
-\begin{abstract}
-This article summarizes the description and evaluation of a new device
-interface that reduce, if not remove, the need for indirection in flash-based
-SSD storage: It has been presented by Yiyang Zhang et al. a paper called
-\textit{De-Indirection for Flash-Based SSDs with Nameless Writes"}.
-
-Their idea is to let the device choose the most suitable block in which to
-write the data. The address of the write is then provided to the client (file
-system). By doing so, the device is able to execute critical tasks such as
-garbage collection and wear leveling without relying on the file system.
-
-We quickly present SSDs and the notion and indirection. We then introduce
-the Nameless Writes interface and some of the evaluations done by the authors
-of the original paper on an emulated nameless-writing device.
-
-This summary is in no way intended to cover the summarized paper in full.
-Readers interested in the details must refer to the original paper.
-\end{abstract}
+%\begin{abstract}
+%This article summarizes the description and evaluation of a new device
+%interface that reduce, if not remove, the need for indirection in flash-based
+%SSD storage: It has been presented by Yiyang Zhang et al. a paper called
+%\textit{De-Indirection for Flash-Based SSDs with Nameless Writes"}.
+%
+%Their idea is to let the device choose the most suitable block in which to
+%write the data. The address of the write is then provided to the client (file
+%system). By doing so, the device is able to execute critical tasks such as
+%garbage collection and wear leveling without relying on the file system.
+%
+%We quickly present SSDs and the notion and indirection. We then introduce
+%the Nameless Writes interface and some of the evaluations done by the authors
+%of the original paper on an emulated nameless-writing device.
+%
+%This summary is in no way intended to cover the summarized paper in full.
+%Readers interested in the details must refer to the original paper.
+%\end{abstract}
 
 \section*{Introduction}
 Indirection is used in many computer systems. It is used mainly to improve
@@ -79,10 +79,32 @@ nameless writes could be a viable solution to solve the indirection issues
 in SSDs.
 
 \section*{SSD principles}
-% TODO
-% Erase/Program
-% Trim, improvement of life cycle
-% Wear leveling
+Although to the file system hard drives appear the same way independent of
+their architecture, internally they can be quite different. SSDs do not have
+the same structures and addressing modes as standard hard drives. They are
+composed of several flash banks divided in blocks thus the normal
+cylinder-head-sector addressing is not appropriate albeit an indirection is
+done to hide this from upper layers.
+
+Because of their inner components, a flash block must be erased before it can
+be written. As such, data cannot be overwritten in place, so disks use a
+pattern known as erase-program, requiring not overwritten pages to be moved
+elsewhere while the block is being erased to be then put back with the new
+ones.
+
+A peculiarity of SSDs is that they have a limited number of writes to the same
+block before starting to show high bit error rates. When this property is
+mixed with the fact that data needs to be written using an erase-program
+model, there is a writing multiplication that hurts deeply the SSD lifetime.
+
+To counter these adversities, the firmware inside the SSD handles with
+indirection where to write data and performs internal garbage collection to
+recover the best possible block to rewrite to perform wear-leveling and
+increase the disk lifetime. Although disk normally hide all their inner
+working, after their introduction, file systems started to help them
+including a command called TRIM. This command informs the disk which pages are
+not in use anymore so as to aid in the garbage collection mechanism and do not
+hurt the lifespan much.
 
 \section*{Indirection in SSDs}
 As discussed in the previous section, indirection plays a crucial role in
@@ -181,11 +203,32 @@ callback have to be used for the file system to update its data structures
 accordingly.
 
 \section*{Evaluation}
-% TODO
-% Emulated nameless-writing device
-% Memory consumption
-% Application performance
-% Write performance
+To evaluate the device interface a series of simulators with different FTLs
+were created. The first version uses a complete page-level mapping, a second
+one with a hybrid mapping and a third one with the nameless-writing structure.
+The devices try to emulate real life equipment in terms of performance,
+although they perform somewhat better than today’s devices.
+
+The first result presented is the fact that the FTL mapping table size is
+smallest for Nameless writes when compared to the other two, as a result of
+having only a small share of the disk that uses this structure. As for the
+page-level mapping, it’s size is approximately 10\% of the total disk space
+while the hybrid does not occupy a lot of space, still being bigger than
+nameless.
+
+In relation to the performance of the different disks, the results show that
+nameless writing performs similar to page-level mapping, meaning close to the
+upper-bound as in page-level we have a direct mapping to each page. Both
+always show results surpassing the ones from a hybrid implementation,
+specially when the writes are random and the hybrid cannot keep up with the
+allocation cost.
+
+Finally when considering wear-leveling techniques to reorder data and
+migrating it  to rewrite in unused pages, the results show that there is a
+small overhead when using Nameless writes instead of pages. This result is
+expected because of the model, but due to the small overhead and the frequency
+that wear-leveling operations are done, they are not considered dominant and
+negative.
 
 \section*{Conclusion}
 Nameless Writes have been introduced to reduce the cost of indirection in
