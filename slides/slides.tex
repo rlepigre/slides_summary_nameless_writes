@@ -25,12 +25,34 @@
 \end{frame}
 
 \begin{frame}
+  \frametitle{Outline}
   \tableofcontents[hideallsubsections]
 \end{frame}
 
 \section{Introduction}
 \begin{frame}
-% TODO
+  \frametitle{What are Nameless Writes?}
+  \begin{itemize}
+    \item New device interface for SSDs
+    \item Remove the need for indirection
+    \item Idea: the device chooses WHERE to write
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{How are Nameless Writes different?}
+  Usual Writes:
+  \begin{itemize}
+    \item The FS requests the writing of data at some location
+    \item The device performs the write
+  \end{itemize}
+
+  Nameless Writes:
+  \begin{itemize}
+    \item The FS requests the writing of data
+    \item The device performs the write
+    \item Address returned to the FS
+  \end{itemize}
 \end{frame}
 
 \section{SSD principles}
@@ -40,7 +62,50 @@
 
 \section{Indirection in SSDs}
 \begin{frame}
-% TODO
+  \frametitle{SSDs need indirection}
+  \begin{itemize}
+    \item Indirection is used to implement wear-leveling
+    \item Absolutely necessary to ensure reasonable lifetime
+    \item Problem: need to store indirection table
+    \item 3 main techniques:
+          \begin{itemize}
+            \item Full-page mapping
+            \item Block mapping
+            \item Hybrid mapping
+          \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Full-page mapping}
+  \begin{itemize}
+    \item Each page can be mapped
+    \item Consider 32-bit pointers per 2KB pages
+    \item With 1TB SSD, 2GB indirection table
+    \item Problem: Great space overhead, DRAM is expensive
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Block mapping}
+  \begin{itemize}
+    \item Mapping at block-level (128 pages)
+    \item 32MB indirection table in the same settings
+    \item Smaller memory overhead
+    \item Problem: high garbage collection cost (Gupta et al.)
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Hybrid mapping}
+  \begin{itemize}
+    \item Map most data at block level
+    \item Small page-mapped area
+    \item Keeps space overhead low
+    \item Avoids garbage collection overhead
+    \item Problem: garbage collection can still hurt performances
+    \item Problem: very complex FTL (Flash Translation Layer)
+  \end{itemize}
 \end{frame}
 
 \section{Nameless Writes}
