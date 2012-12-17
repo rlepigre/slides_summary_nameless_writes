@@ -5,16 +5,16 @@
 \usepackage{graphicx}
 \usepackage{sectsty}
 \sectionfont{\large}
-\usepackage[left=2cm, right=2cm, top=2cm, bottom=2cm]{geometry}
+\usepackage[left=1cm, right=1cm, top=2cm, bottom=2cm]{geometry}
 
 \usepackage{listings}
 \usepackage{latexsym}
 \usepackage{proof}
 \usepackage{amssymb}
 
-\lstset{
-  basicstyle=\tiny
-}
+%\lstset{
+%  basicstyle=\footnotesize
+%}
 
 %% New commands
 \newcommand{\eqdef}{\;\stackrel{\text{def}}{=}\;}
@@ -69,7 +69,8 @@ for indirection. Their idea is to let the SSD choose the name (address) of the
 data to be written and only after inform the file system for it to register
 the location in its internal data structures.
 
-Content of the report. In the first section we introduce SSDs and their
+\noindent
+\textbf{Content of the report.} In the first section we introduce SSDs and their
 particular functionning mode. We then present the techniques of indirection
 that are currently used in SSDs to ensure wear-leveling in the second section.
 In the third section, Nameless Writes are introduced together with their
@@ -119,7 +120,7 @@ up into 2KB pages. A full page mapping (with one 32-bit pointer per page)
 would require a 2GB space, which would be unacceptable considering the cost
 of SRAM.
 
-An other idea is to map blocks of, say 128 pages. The space cost of the
+An other idea is to map blocks of, say, 128 pages. The space cost of the
 mapping would be reduced to 32MB which seems more reasonable. However, it has
 been shown that with such coarse grain mapping, there is a huge performance
 overhead introduced by garbage collection (Gupta et al.).
@@ -134,24 +135,22 @@ that the FTL is made very complex, and there is still a performance overhead
 costly and induce a performance problem.
 
 In all of these designs, the indirection in the FTL implies some cost that
-might not be very significant now, but that will become a problem when the
-SSDs scale. The hybrid schemes will eventually become infeasible.
-
-To solve these problems, the authors of the paper introduce Nameless Writes.
+might not be very significant now, but when SSDs scale, the hybrid schemes
+will eventually become infeasible. To solve these problems, the authors of the
+paper introduce Nameless Writes.
 
 \section*{Nameless Writes}
 The aim of the new technique presented here is to reduce most of the costs of
 indirection while keeping its benefits. The idea is not to provide any address
 for a write operation. The device can itself choose where to put the data
 among all physical pages. The file system is then notified and can record the
-data in its data-structures.
-
-Here is the main interface of a nameless writing device:
+data in its data-structures. Here is the main interface of a nameless writing
+device:
 \begin{lstlisting}
-Nameless_Write(data, len, meta): status, phys@
-Nameless_Overwrite(phys@, data, len, meta): status, new@
-Physical_Read(phys@, len, meta): status, data
-Free(virt/phys@, len, meta, flag): status
+Nameless_Write(data, len): phys@
+Nameless_Overwrite(phys@, data, len): new@
+Physical_Read(phys@, len): data
+Free(virt/phys@, len)
 \end{lstlisting}
 Note that the nameless overwrite has the same mechanism. The original address
 is given as a parameter, and the new address is returned once the device has
@@ -161,42 +160,35 @@ free is handled by the device. Note that for the read operation the physical
 address is to be provided.
 
 There is but one problem with this Nameless Write interface: the recursive
-update problem. If the only available write operation is nameless write, any
-update to the file system will require a recursive set of updates up the file
-system tree. For exemple, appending a block at the end of a file will require
-the inode of the file to be modified using a nameless overwrite which will
-change its location. So any structure referencing the inode will have to be
-modified, propagating potentially the update up to the file system root.
+update problem. If the only available write operation is the nameless one, any
+update to the file system will require a recursive set of updates. For
+exemple, appending a block at the end of a file will require the inode of the
+file to be modified using a nameless overwrite which will change its location.
+So any structure referencing the inode will have to be modified, propagating
+potentially the update up to the file system's root.
 
 To solve this problem, the authors of the paper propose to provide a segmented
 address space: a large physical address space for nameless writes, and a small
-virtual address space mapped to the physical address space. Keeping the
-pointer-based structures in the virtual space will break the recursion in case
-of reccursive update.
-
-The operations provided for virtual read and write are usual:
+virtual address space. Keeping the pointer-based structures in the virtual
+space will break the recursion in case of reccursive update. The operations
+provided for virtual read and write are usual:
 \begin{lstlisting}
-Virtual_Read(virt@, len): status, data
-Virtual_Write(virt@, data, len): status
+Virtual_Read(virt@, len): data
+Virtual_Write(virt@, data, len)
 \end{lstlisting}
-
 Only a very small indirection table is kept by the device to map the virtual
 addresses to physical addresses, and it will usually fit in the device cache.
-The size of the segement is not fixed, so that it can be addapted to the file
-system in use.
 
 Note that physical writes are not allowed, only the device has the power to
 choose the location of a write. Also, to distinguish a block that is mapped by
-a virtual block, a flag is set in its metadata which are included in the block
-headers.
+a virtual block, a flag is set in the block headers.
 
 The device also needs to be able to move data from one place to another in
 order to allow wear leveling. The interface defines a callback function that
 can notify the file system of data migration.
 \begin{lstlisting}
-Migration [Callback] (old_phys@, new@, meta)
+Migration [Callback] (old_phys@, new@)
 \end{lstlisting}
-
 Blocks in the virtual address space can be moved without having to notice the
 file system, but for the blocks that are in the physical space, the migration
 callback have to be used for the file system to update its data structures
@@ -204,10 +196,10 @@ accordingly.
 
 \section*{Evaluation}
 To evaluate the device interface a series of simulators with different FTLs
-were created. The first version uses a complete page-level mapping, a second
-one with a hybrid mapping and a third one with the nameless-writing structure.
-The devices try to emulate real life equipment in terms of performance,
-although they perform somewhat better than today’s devices.
+were created. The first version uses a complete page-level mapping, the second
+one a hybrid mapping and the third one the nameless-writing structure. The
+devices try to emulate real life equipment in terms of performance, although
+they perform somewhat better than today’s devices.
 
 The first result presented is the fact that the FTL mapping table size is
 smallest for Nameless writes when compared to the other two, as a result of
@@ -224,7 +216,7 @@ specially when the writes are random and the hybrid cannot keep up with the
 allocation cost.
 
 Finally when considering wear-leveling techniques to reorder data and
-migrating it  to rewrite in unused pages, the results show that there is a
+migrating it to rewrite in unused pages, the results show that there is a
 small overhead when using Nameless writes instead of pages. This result is
 expected because of the model, but due to the small overhead and the frequency
 that wear-leveling operations are done, they are not considered dominant and
@@ -233,12 +225,12 @@ negative.
 \section*{Conclusion}
 Nameless Writes have been introduced to reduce the cost of indirection in
 SSDs. This new interface still ensures wear-leveling and has been tested using
-and emulated device for which Yiyang Zhang ported the Linux ext3 file system.
+and emulated device.
 
 Nameless-writing devices have great advantages, as have been shows with the
 results of the evaluation. In particular, the space cost of the system is
-greatly reduced even compared to hybrid mapping FTLs, and random-write
-performance are improved. The design of the FTL is also made much simpler.
+greatly reduced even compared to hybrid mapping FTLs. The design of the FTL is
+also made much simpler.
 
 Even though the authors only ported the Linux ext3 file system to work with
 their emulated nameless-writing device, they argue that it would be possible
