@@ -4,6 +4,7 @@
 \usepackage{lmodern}
 \usepackage[utf8]{inputenc}
 \setbeamertemplate{navigation symbols}{}
+\usepackage{listings}
 
 \title[\insertframenumber/\inserttotalframenumber]
       {Research paper presentation:\\
@@ -105,12 +106,48 @@
     \item Avoids garbage collection overhead
     \item Problem: garbage collection can still hurt performances
     \item Problem: very complex FTL (Flash Translation Layer)
+    \item Solution: Nameless Writes
   \end{itemize}
 \end{frame}
 
 \section{Nameless Writes}
+\begin{frame}[fragile]
+  \frametitle{Main interface}
+  \begin{lstlisting}
+Nameless_Write(data, len) : phys@
+Nameless_Overwrite(phys@, data, len) : new@
+Physical_Read(phys@, len) : data
+Free(vitr/phys@, len)
+  \end{lstlisting}
+\end{frame}
+
 \begin{frame}
-% TODO
+  \frametitle{Inode, and file structure}
+  \begin{center}
+  \includegraphics[width=250px]{inode2.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{File tree}
+  \begin{center}
+  \includegraphics[width=250px]{file_tree.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Virtual read / write interface}
+  \begin{lstlisting}
+Virtual_Write(virt@, data, len)
+Virtual_Read(virt@, len) : data
+  \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Migration callback}
+  \begin{lstlisting}
+Migration [Callback] (old_phys@, new_phys@)
+  \end{lstlisting}
 \end{frame}
 
 \section{Evaluation}
