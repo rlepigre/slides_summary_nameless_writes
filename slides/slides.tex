@@ -111,6 +111,16 @@
 \end{frame}
 
 \section{Nameless Writes}
+\begin{frame}
+  \frametitle{Reminder}
+  Idea: the device chooses WHERE to write
+  \begin{itemize}
+    \item The FS requests the writing of data
+    \item The device performs the write
+    \item Address returned to the FS
+  \end{itemize}
+\end{frame}
+
 \begin{frame}[fragile]
   \frametitle{Main interface}
   \begin{lstlisting}
@@ -122,9 +132,20 @@ Free(vitr/phys@, len)
 \end{frame}
 
 \begin{frame}
+  \frametitle{Recursive update problem}
+  \begin{itemize}
+    \item Problem with this interface: recursive update
+    \item File modification imply inode update
+    \item The inode will move (Nameless overwrite)
+    \item Every structure pointing to it will have to be updated
+    \item ...
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
   \frametitle{Inode, and file structure}
   \begin{center}
-  \includegraphics[width=250px]{inode2.png}
+  \includegraphics[width=250px]{inode.png}
   \end{center}
 \end{frame}
 
@@ -132,6 +153,22 @@ Free(vitr/phys@, len)
   \frametitle{File tree}
   \begin{center}
   \includegraphics[width=250px]{file_tree.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Solution: Segmented address space}
+  \begin{itemize}
+    \item Large physical address space (for nameless writes)
+    \item Small virtual address space (for traditional writes)
+    \item Idea: keep pointer-based structures in virtual space
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Segmented address space}
+  \begin{center}
+  \includegraphics[width=250px]{segmented.png}
   \end{center}
 \end{frame}
 
@@ -145,6 +182,10 @@ Virtual_Read(virt@, len) : data
 
 \begin{frame}[fragile]
   \frametitle{Migration callback}
+  \begin{itemize}
+    \item Callback provided for the SSD to notice data migration to the FS
+    \item Useful for it to reclaim blocks (garbage collection)
+  \end{itemize}
   \begin{lstlisting}
 Migration [Callback] (old_phys@, new_phys@)
   \end{lstlisting}
