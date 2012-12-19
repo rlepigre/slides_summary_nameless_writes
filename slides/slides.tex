@@ -58,8 +58,64 @@
 
 \section{SSD principles}
 \begin{frame}
-% TODO
+  \frametitle{SSDs are not Hard Drives}
+  \begin{itemize}
+    \item Essentially different from Hard Drives
+    \item Fast constant access to a random position
+    \item Limited number of writes
+  \end{itemize}
 \end{frame}
+
+\begin{frame}
+  \frametitle{SSDs Internally (1) - General View}
+  \begin{center}
+  \includegraphics[width=250px]{principles_1.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{SSDs Internally (2) - Blocks}
+  \begin{center}
+  \includegraphics[width=250px]{principles_2.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{SSDs Internally (3) - Blocks and Pages}
+  \begin{center}
+  \includegraphics[width=250px]{principles_3.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Writing to a block}
+  \begin{itemize}
+    \item Page needs to be in a erased state
+    \item Cannot overwrite data
+    \item Erasing is done at page level
+  \end{itemize}
+  \begin{center}
+  \includegraphics[width=150px]{principles_4.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Overwrite - Erase/Program}
+  \begin{center}
+  \includegraphics[width=250px]{principles_5.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Wear Leveling and Garbage Collection}
+  \begin{itemize}
+    \item Reusing same block reduces its lifetime
+    \item Erase/Program is expensive
+    \item Move data to better use blocks
+    \item Garbage Collection - Recover invalid pages
+  \end{itemize}
+\end{frame}
+
 
 \section{Indirection in SSDs}
 \begin{frame}
@@ -168,7 +224,7 @@ Free(vitr/phys@, len)
 \begin{frame}
   \frametitle{Segmented address space}
   \begin{center}
-  \includegraphics[width=250px]{segmented.png}
+  %\includegraphics[width=250px]{segmented.png}
   \end{center}
 \end{frame}
 
@@ -193,12 +249,61 @@ Migration [Callback] (old_phys@, new_phys@)
 
 \section{Evaluation}
 \begin{frame}
-% TODO
+  \frametitle{Setup}
+  \begin{itemize}
+    \item Emulator with three different FTLs
+    \begin{itemize}
+    	\item Page-Level,
+    	\item Hybrid 5\% page-level mapping
+    	\item Nameless Writes
+    \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Memory Consumption}
+  \begin{center}
+  \includegraphics[width=250px]{consumption.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Performance}
+  \begin{center}
+  \includegraphics[width=250px]{throughput.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Performance}
+  \begin{center}
+  \includegraphics[width=250px]{throughput_2.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Performance}
+  \begin{center}
+  \includegraphics[width=250px]{performance.png}
+  \end{center}
 \end{frame}
 
 \section{Conclusion}
 \begin{frame}
-% TODO
+  \frametitle{Conclusion}
+  \begin{itemize}
+    \item New write interface
+    \item Improves random-write performance
+    \item Reduce space costs
+    \item Future work: Port to other file systems
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Questions}
+  \begin{itemize}
+    \item Questions?
+  \end{itemize}
 \end{frame}
 
 \end{document}
